@@ -16,6 +16,7 @@ const semantic_tokens = @import("./semantic_tokens.zig");
 const shared = @import("./shared.zig");
 const Ast = std.zig.Ast;
 const known_folders = @import("known-folders");
+const dan = @import("dan/runner.zig");
 
 const data = switch (build_options.data_version) {
     .master => @import("data/master.zig"),
@@ -1301,6 +1302,38 @@ fn saveDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req
         return;
     };
     try document_store.applySave(handle);
+
+    const parsed = dan.ast_check(arena.allocator(), req.params.textDocument.uri) catch { return; };
+
+    var diagnostics = std.ArrayList(types.Diagnostic).init(arena.allocator());
+    for (parsed.items) |parsed_error| {
+        try diagnostics.append(.{
+            .severity = .Error,
+            .source = "zls",
+            .code = parsed_error.error_str,
+            .range = .{
+                .start = .{
+                    .line = parsed_error.line_number,
+                    .character = parsed_error.char_number},
+                .end = .{
+                    .line = parsed_error.line_number,
+                    .character = parsed_error.char_number},
+                    },
+            .message = parsed_error.error_str,
+        });
+    }
+
+    send(arena, types.Notification {
+        .method = "textDocument/publishDiagnostics",
+        .params = .{
+            .PublishDiagnostics = .{
+                .uri = handle.uri(),
+                .diagnostics = diagnostics.items,
+            },
+        },
+    }) catch {
+        // Eh
+    };
 }
 
 fn closeDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.CloseDocument, config: Config) error{}!void {
