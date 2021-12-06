@@ -12,9 +12,9 @@ pub fn ast_check(allocator : Allocator, path : []const u8) !std.ArrayList(Parsed
     var no_url_encode = try hack_url_decode(allocator, no_prefix);
     var parsed_path = try std.mem.replaceOwned(u8, allocator, no_url_encode, "/", "\\");
 
-    var file = try std.fs.createFileAbsolute("C:\\users\\dan\\tmp\\zls.log", .{.truncate = false});
-    try file.writer().print("Parsed path as '{s}'", .{parsed_path});
-    defer(file.close());
+    //var file = try std.fs.createFileAbsolute("C:\\users\\dan\\tmp\\zls.log", .{.truncate = false});
+    //try file.writer().print("Parsed path as '{s}'", .{parsed_path});
+    //defer(file.close());
 
     var result = try std.ChildProcess.exec(.{.allocator = allocator, .argv = &.{"zig", "ast-check", parsed_path}});
 
@@ -22,15 +22,15 @@ pub fn ast_check(allocator : Allocator, path : []const u8) !std.ArrayList(Parsed
 
     var res = std.ArrayList(ParsedError).init(allocator);
 
-    try file.writer().print("stderr '{s}'", .{result.stderr});
-    std.log.info("{s}\n", .{result.stderr});
+    //try file.writer().print("stderr '{s}'", .{result.stderr});
+    //std.log.info("{s}\n", .{result.stderr});
 
     var cursor : usize = 0;
     while (parse_error(allocator, lines, &cursor)) |parsed| {
         try res.append(parsed);
     }
 
-    try file.writer().print("Parsed '{d}' errors", .{res.items.len});
+    //try file.writer().print("Parsed '{d}' errors", .{res.items.len});
 
     return res;
 }

@@ -46,8 +46,6 @@ pub const Lines = struct {
             try line_defs.append(.{.start = line_start, .end = backing.len});
         }
 
-        print("Parsed {d} non-empty lines\n", .{line_defs.items.len});
-
         return Lines{.backing = backing, .lines = line_defs, .backing_owned = false};
     }
 
