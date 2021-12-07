@@ -28,6 +28,9 @@ const data = switch (build_options.data_version) {
 
 const logger = std.log.scoped(.main);
 
+var cur_workload_path_buffer : [512] u8 = undefined;
+var cur_workload_len : usize = 0;
+
 // Always set this to debug to make std.log call into our handler, then control the runtime
 // value in the definition below.
 pub const log_level = .debug;
@@ -1156,6 +1159,15 @@ fn loadConfigInFolder(folder_path: []const u8) ?Config {
 fn initializeHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.Initialize, config: Config) !void {
     _ = config;
 
+    if (req.params.workspaceFolders != null and req.params.workspaceFolders.?.len > 0) {
+        const workspace = req.params.workspaceFolders.?[0].uri;
+        var file = try std.fs.createFileAbsolute("C:\\users\\dan\\tmp\\zls_init.log", .{.truncate = false});
+        try file.writer().print("Starting workspace folders '{s}'", .{workspace});
+        defer(file.close());
+        std.mem.copy(u8, &cur_workload_path_buffer, workspace);
+        cur_workload_len = workspace.len;
+    }
+
     for (req.params.capabilities.offsetEncoding.value) |encoding| {
         if (std.mem.eql(u8, encoding, "utf-8")) {
             offset_encoding = .utf8;
@@ -1281,32 +1293,9 @@ fn openDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req
         try semanticTokensFullHandler(arena, id, .{ .params = .{ .textDocument = .{ .uri = req.params.textDocument.uri } } }, config);
 }
 
-fn changeDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.ChangeDocument, config: Config) !void {
-    _ = id;
-
-    const handle = document_store.getHandle(req.params.textDocument.uri) orelse {
-        logger.debug("Trying to change non existent document {s}", .{req.params.textDocument.uri});
-        return;
-    };
-
-    try document_store.applyChanges(handle, req.params.contentChanges.Array, offset_encoding);
-    try publishDiagnostics(arena, handle.*, config);
-}
-
-fn saveDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.SaveDocument, config: Config) error{OutOfMemory}!void {
-    _ = config;
-    _ = id;
-    _ = arena;
-    const handle = document_store.getHandle(req.params.textDocument.uri) orelse {
-        logger.warn("Trying to save non existent document {s}", .{req.params.textDocument.uri});
-        return;
-    };
-    try document_store.applySave(handle);
-
-    const parsed = dan.ast_check(arena.allocator(), req.params.textDocument.uri) catch { return; };
-
+fn send_dan_diagnostics(arena : *std.heap.ArenaAllocator, parsed : []const dan.ParsedError, handle : DocumentStore.Handle) error{OutOfMemory}!void {
     var diagnostics = std.ArrayList(types.Diagnostic).init(arena.allocator());
-    for (parsed.items) |parsed_error| {
+    for (parsed) |parsed_error| {
         try diagnostics.append(.{
             .severity = .Error,
             .source = "zls",
@@ -1334,6 +1323,35 @@ fn saveDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req
     }) catch {
         // Eh
     };
+}
+
+fn changeDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.ChangeDocument, config: Config) !void {
+    _ = id;
+
+    const handle = document_store.getHandle(req.params.textDocument.uri) orelse {
+        logger.debug("Trying to change non existent document {s}", .{req.params.textDocument.uri});
+        return;
+    };
+
+    try document_store.applyChanges(handle, req.params.contentChanges.Array, offset_encoding);
+    try publishDiagnostics(arena, handle.*, config);
+
+    const parsed = dan.ast_check(arena.allocator(), req.params.textDocument.uri) catch { return; };
+    try send_dan_diagnostics(arena, parsed.items, handle.*);
+}
+
+fn saveDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.SaveDocument, config: Config) error{OutOfMemory}!void {
+    _ = config;
+    _ = id;
+    _ = arena;
+    const handle = document_store.getHandle(req.params.textDocument.uri) orelse {
+        logger.warn("Trying to save non existent document {s}", .{req.params.textDocument.uri});
+        return;
+    };
+    try document_store.applySave(handle);
+
+    const parsed = dan.zig_build(arena.allocator(), cur_workload_path_buffer[0..cur_workload_len]) catch { return; };
+    try send_dan_diagnostics(arena, parsed.items, handle.*);
 }
 
 fn closeDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.CloseDocument, config: Config) error{}!void {

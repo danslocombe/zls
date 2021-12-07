@@ -7,10 +7,37 @@ pub fn hack_url_decode(allocator : Allocator, input : []const u8) ![]const u8 {
     return std.mem.replaceOwned(u8, allocator, input, "%3A", ":");
 }
 
-pub fn ast_check(allocator : Allocator, path : []const u8) !std.ArrayList(ParsedError) {
+pub fn parse_path(allocator : Allocator, path: []const u8) ![]const u8 {
     var no_prefix = try std.mem.replaceOwned(u8, allocator, path, "file:///", "");
     var no_url_encode = try hack_url_decode(allocator, no_prefix);
     var parsed_path = try std.mem.replaceOwned(u8, allocator, no_url_encode, "/", "\\");
+    return parsed_path;
+}
+
+pub fn zig_build(allocator : Allocator, path: []const u8) !std.ArrayList(ParsedError) {
+    var res = std.ArrayList(ParsedError).init(allocator);
+
+    var file = try std.fs.createFileAbsolute("C:\\users\\dan\\tmp\\zls_build.log", .{.truncate = false});
+    defer(file.close());
+
+    try file.writer().print("GEGGG", .{});
+    const parsed_path = try parse_path(allocator, path);
+    try file.writer().print("Running zig build in '{s}'", .{parsed_path});
+
+    var result = try std.ChildProcess.exec(.{.allocator = allocator, .argv = &.{"zig", "build"}, .cwd = parsed_path});
+    try file.writer().print("stdout {s} \n stderr '{s}'", .{result.stdout, result.stderr});
+    var lines = try Lines.init(allocator, result.stderr);
+
+    var cursor : usize = 0;
+    while (parse_error(allocator, lines, &cursor)) |parsed| {
+        try res.append(parsed);
+    }
+
+    return res;
+}
+
+pub fn ast_check(allocator : Allocator, path : []const u8) !std.ArrayList(ParsedError) {
+    const parsed_path = try parse_path(allocator, path);
 
     //var file = try std.fs.createFileAbsolute("C:\\users\\dan\\tmp\\zls.log", .{.truncate = false});
     //try file.writer().print("Parsed path as '{s}'", .{parsed_path});
@@ -56,7 +83,7 @@ fn parse_error(allocator : Allocator, lines : Lines, cursor : *usize) ?ParsedErr
         cursor.* += 1;
 
         // HACKY
-        if (std.mem.startsWith(u8, cur_line.?, "c:\\")) {
+        if (std.mem.startsWith(u8, cur_line.?, "c:\\") or std.mem.startsWith(u8, cur_line.?, "C:\\")) {
             var splits = std.mem.split(u8, cur_line.?, " ");
             var path = splits.next();
             var typetype = splits.next();
