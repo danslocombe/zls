@@ -1336,8 +1336,9 @@ fn changeDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, r
     try document_store.applyChanges(handle, req.params.contentChanges.Array, offset_encoding);
     try publishDiagnostics(arena, handle.*, config);
 
-    const parsed = dan.ast_check(arena.allocator(), req.params.textDocument.uri) catch { return; };
-    try send_dan_diagnostics(arena, parsed.items, handle.*);
+    // TODO apply to document store
+    //const parsed = dan.ast_check(arena.allocator(), req.params.textDocument.uri) catch { return; };
+    //try send_dan_diagnostics(arena, parsed.items, handle.*);
 }
 
 fn saveDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req: requests.SaveDocument, config: Config) error{OutOfMemory}!void {
@@ -1349,6 +1350,9 @@ fn saveDocumentHandler(arena: *std.heap.ArenaAllocator, id: types.RequestId, req
         return;
     };
     try document_store.applySave(handle);
+
+    const parsed_ast_check = dan.ast_check(arena.allocator(), req.params.textDocument.uri) catch { return; };
+    try send_dan_diagnostics(arena, parsed_ast_check.items, handle.*);
 
     const parsed = dan.zig_build(arena.allocator(), cur_workload_path_buffer[0..cur_workload_len]) catch { return; };
     try send_dan_diagnostics(arena, parsed.items, handle.*);
